@@ -1,0 +1,155 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+
+enum TransactionType {
+  TRANSFER
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum EntryType {
+  DEBIT
+  CREDIT
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  passwordHash       String
+  name               String
+  role               Role                @default(USER)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  accounts           Account[]
+  idempotencyRecords IdempotencyRecord[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model Account {
+  id                   String          @id @default(cuid())
+  userId               String
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  accountNumber        String          @unique
+  balance              Decimal         @default(0.0) @db.Decimal(18, 4)
+  currency             String          @default("USD")
+  status               AccountStatus   @default(ACTIVE)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  sentTransactions     Transaction[]   @relation("SenderAccount")
+  receivedTransactions Transaction[]   @relation("ReceiverAccount")
+  ledgerEntries        LedgerEntry[]
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Transaction {
+  id                String            @id @default(cuid())
+  idempotencyKey    String?
+  senderAccountId   String
+  receiverAccountId String
+  senderAccount     Account           @relation("SenderAccount", fields: [senderAccountId], references: [id], onDelete: Restrict)
+  receiverAccount   Account           @relation("ReceiverAccount", fields: [receiverAccountId], references: [id], onDelete: Restrict)
+  amount            Decimal           @db.Decimal(18, 4)
+  currency          String            @default("USD")
+  type              TransactionType
+  status            TransactionStatus @default(PENDING)
+  reference         String?
+  metadata          String?
+  createdAt         DateTime          @default(now())
+  ledgerEntries     LedgerEntry[]
+
+  @@index([senderAccountId, createdAt])
+  @@index([receiverAccountId, createdAt])
+  @@index([idempotencyKey])
+  @@map("transactions")
+}
+
+model LedgerEntry {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  sequenceNo    Int         @unique
+  entryType     EntryType
+  amount        Decimal     @db.Decimal(18, 4)
+  balanceAfter  Decimal     @db.Decimal(18, 4)
+  prevHash      String
+  entryHash     String
+  createdAt     DateTime    @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([sequenceNo])
+  @@map("ledger_entries")
+}
+
+model LedgerCheckpoint {
+  id                   String   @id @default(cuid())
+  sequenceNo           Int      @unique
+  entryHash            String
+  checkpointHash       String
+  verifiedEntriesCount Int
+  createdAt            DateTime @default(now())
+
+  @@map("ledger_checkpoints")
+}
+
+model IdempotencyRecord {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key          String
+  requestHash  String
+  status       String   @default("PROCESSING")
+  responseCode Int?
+  responseBody String?
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@unique([userId, key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  ipAddress String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
