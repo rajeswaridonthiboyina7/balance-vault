@@ -9,7 +9,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "test:stage1": "tsx scripts/verify-stage1.ts"
+    "test:stage1": "tsx scripts/verify-stage1.ts",
+    "test:stage2": "tsx scripts/verify-stage2.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

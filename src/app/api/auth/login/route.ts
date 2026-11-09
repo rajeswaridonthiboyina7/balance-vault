@@ -5,12 +5,14 @@ import {
   signSessionToken,
   SESSION_COOKIE_NAME,
 } from "@/lib/auth";
+import { checkRateLimit, resetRateLimit } from "@/lib/rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { email, password } = body;
 
+    // 1. Basic Input Validation
     if (!email || !password) {
       return NextResponse.json(
         { error: "Email and password are required" },
@@ -20,6 +22,41 @@ export async function POST(req: NextRequest) {
 
     const normalizedEmail = email.toLowerCase().trim();
 
+    // 2. Extract Client IP
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+      req.headers.get("x-real-ip") ||
+      "127.0.0.1";
+
+    // 3. PostgreSQL-Backed Rate Limiting (Serverless Safe)
+    const ipKey = `login:ip:${ip}`;
+    const accountKey = `login:account:${normalizedEmail}`;
+
+    // IP level limit: 10 attempts per minute
+    const ipRateCheck = await checkRateLimit(ipKey, 10, 60);
+    if (!ipRateCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many login attempts from this IP. Please try again later." },
+        {
+          status: 429,
+          headers: { "Retry-After": ipRateCheck.retryAfterSeconds.toString() },
+        }
+      );
+    }
+
+    // Account level limit: 5 attempts per minute
+    const accountRateCheck = await checkRateLimit(accountKey, 5, 60);
+    if (!accountRateCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many login attempts for this account. Please try again later." },
+        {
+          status: 429,
+          headers: { "Retry-After": accountRateCheck.retryAfterSeconds.toString() },
+        }
+      );
+    }
+
+    // 4. Lookup User
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
       include: {
@@ -36,6 +73,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!user) {
+      // Constant-time/generic message - does not reveal email non-existence
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
@@ -50,6 +88,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 5. Authentication Succeeded: Reset Account Rate Limit
+    await resetRateLimit(accountKey);
+
     // Record login in audit log
     await prisma.auditLog.create({
       data: {
@@ -57,6 +98,7 @@ export async function POST(req: NextRequest) {
         action: "USER_LOGIN",
         entity: "USER",
         entityId: user.id,
+        ipAddress: ip,
         details: "User authenticated successfully",
       },
     });
@@ -98,4 +140,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
