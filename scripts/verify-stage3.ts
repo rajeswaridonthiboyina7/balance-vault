@@ -86,6 +86,26 @@ async function cleanup(emailPrefix: string) {
     await prisma.account.deleteMany({
       where: { id: { in: accountIds } },
     });
+
+    // 5. Restore Treasury balance to match remaining ledger entries
+    const treasuryAcc = await prisma.account.findFirst({
+      where: { accountNumber: { startsWith: "VAULT-SYSTEM-" } },
+    });
+    if (treasuryAcc) {
+      const credits = await prisma.ledgerEntry.aggregate({
+        where: { accountId: treasuryAcc.id, entryType: "CREDIT" },
+        _sum: { amount: true },
+      });
+      const debits = await prisma.ledgerEntry.aggregate({
+        where: { accountId: treasuryAcc.id, entryType: "DEBIT" },
+        _sum: { amount: true },
+      });
+      const actualBalance = Number(credits._sum.amount || 0) - Number(debits._sum.amount || 0);
+      await prisma.account.update({
+        where: { id: treasuryAcc.id },
+        data: { balance: actualBalance },
+      });
+    }
   }
 
   // 5. Delete audit logs & users

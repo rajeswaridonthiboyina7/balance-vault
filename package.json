@@ -10,7 +10,9 @@
     "prisma:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "test:stage1": "tsx scripts/verify-stage1.ts",
-    "test:stage2": "tsx scripts/verify-stage2.ts"
+    "test:stage2": "tsx scripts/verify-stage2.ts",
+    "test:stage3": "tsx scripts/verify-stage3.ts",
+    "test:stage4": "tsx scripts/verify-stage4.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
