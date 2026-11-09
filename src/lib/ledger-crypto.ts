@@ -1,9 +1,33 @@
 import * as crypto from "crypto";
 import { GENESIS_HASH } from "./constants";
 
-const HMAC_SECRET =
-  process.env.LEDGER_HMAC_SECRET ||
-  "dev-ledger-hmac-secret-hash-validation-key";
+export function getLedgerHmacSecret(): string {
+  const secret = process.env.LEDGER_HMAC_SECRET;
+  if (!secret || secret.trim() === "") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "LEDGER_HMAC_SECRET is not set. Cannot start in production without a valid HMAC secret."
+      );
+    }
+    // Development fallback — never use in production
+    return "dev-ledger-hmac-secret-hash-validation-key";
+  }
+  if (secret === "dev-ledger-hmac-secret-hash-validation-key") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "LEDGER_HMAC_SECRET is using the development placeholder. Set a real secret in production."
+      );
+    }
+  }
+  if (secret.length < 32) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "LEDGER_HMAC_SECRET must be at least 32 characters in production."
+      );
+    }
+  }
+  return secret;
+}
 
 export interface LedgerHashPayload {
   prevHash: string;
@@ -20,6 +44,7 @@ export interface LedgerHashPayload {
  * Uses a server-side HMAC secret not stored in the database.
  */
 export function computeEntryHash(payload: LedgerHashPayload): string {
+  const hmacSecret = getLedgerHmacSecret();
   const content = [
     payload.prevHash,
     payload.sequenceNo.toString(),
@@ -30,7 +55,7 @@ export function computeEntryHash(payload: LedgerHashPayload): string {
     payload.timestamp,
   ].join("|");
 
-  return crypto.createHmac("sha256", HMAC_SECRET).update(content).digest("hex");
+  return crypto.createHmac("sha256", hmacSecret).update(content).digest("hex");
 }
 
 /**
@@ -42,6 +67,7 @@ export function computeCheckpointHash(
   verifiedEntriesCount: number,
   timestamp: string
 ): string {
+  const hmacSecret = getLedgerHmacSecret();
   const content = [
     sequenceNo.toString(),
     entryHash,
@@ -49,6 +75,6 @@ export function computeCheckpointHash(
     timestamp,
   ].join("|");
 
-  return crypto.createHmac("sha256", HMAC_SECRET).update(content).digest("hex");
+  return crypto.createHmac("sha256", hmacSecret).update(content).digest("hex");
 }
 

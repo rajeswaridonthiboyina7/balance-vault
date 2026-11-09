@@ -163,15 +163,21 @@ export async function executeDoubleEntryMovement(
       const newSenderBalance = Number((senderBalance - amount).toFixed(4));
       const newReceiverBalance = Number((receiverBalance + amount).toFixed(4));
 
-      // Retrieve latest ledger head with exclusive lock
+      // 1. Acquire transaction-level advisory lock on global ledger sequence
+      // pg_advisory_xact_lock automatically releases when transaction commits or rolls back
+      // Using hashtext('global_ledger_sequence') ensures deterministic 64-bit lock key
+      await tx.$executeRawUnsafe(
+        `SELECT pg_advisory_xact_lock(hashtext('global_ledger_sequence'))`
+      );
+
+      // 2. Retrieve latest ledger head only AFTER acquiring the advisory lock
       const latestHead = await tx.$queryRawUnsafe<
         Array<{ sequenceNo: number; entryHash: string }>
       >(
         `SELECT "sequenceNo", "entryHash" 
          FROM ledger_entries 
          ORDER BY "sequenceNo" DESC 
-         LIMIT 1 
-         FOR UPDATE`
+         LIMIT 1`
       );
 
       const lastSeq = latestHead.length > 0 ? latestHead[0].sequenceNo : 0;
