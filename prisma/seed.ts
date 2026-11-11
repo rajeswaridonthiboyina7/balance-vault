@@ -26,7 +26,14 @@ async function main() {
   console.log("Starting BalanceVault database seed...");
 
   const adminEmail = process.env.INITIAL_ADMIN_EMAIL || "admin@balancevault.local";
-  const adminPassword = process.env.INITIAL_ADMIN_PASSWORD || "AdminSecurePassword123!";
+  const adminPassword = process.env.INITIAL_ADMIN_PASSWORD;
+
+  if (!adminPassword || adminPassword.trim().length === 0) {
+    throw new Error(
+      "CONFIGURATION ERROR: INITIAL_ADMIN_PASSWORD environment variable is required and must not be empty."
+    );
+  }
+
   const adminName = process.env.INITIAL_ADMIN_NAME || "System Administrator";
   const reserveAmount = 1000000.0;
 
